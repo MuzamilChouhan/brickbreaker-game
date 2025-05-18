@@ -119,7 +119,7 @@
             height: 10,
             x: 400 - 50,
             y: 570,
-            speed: 500, // pixels per second
+            speed: 500,
             dx: 0
         };
 
@@ -129,7 +129,7 @@
             radius: 8,
             dx: 0,
             dy: 0,
-            baseSpeed: 400, // pixels per second
+            baseSpeed: 400,
             speed: 400
         };
 
@@ -166,11 +166,11 @@
                 this.type = type;
                 this.width = 20;
                 this.height = 20;
-                this.dy = 100; // pixels per second
+                this.dy = 100;
             }
         }
 
-        // Particle class for brick break effect
+        // Particle class
         class Particle {
             constructor(x, y) {
                 this.x = x;
@@ -183,7 +183,7 @@
             }
         }
 
-        // Audio with error handling
+        // Audio
         const sounds = {
             paddle: new Audio('https://freesound.org/data/previews/320/320655_5260872-lq.mp3'),
             brick: new Audio('https://freesound.org/data/previews/178/178660_717716-lq.mp3'),
@@ -246,13 +246,15 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') paddle.dx = -paddle.speed;
             if (e.key === 'ArrowRight') paddle.dx = paddle.speed;
-            if (e.key === ' ' && gameState !== 'gameOver' && gameState !== 'won') {
+            if (e.key === ' ' && gameState !== 'gameOver') {
                 gameState = gameState === 'playing' ? 'paused' : 'playing';
                 startButton.textContent = gameState === 'playing' ? 'Pause' : 'Start';
                 startButton.setAttribute('aria-label', gameState === 'playing' ? 'Pause game' : 'Start game');
                 if (gameState === 'playing') {
-                    ball.dx = ball.baseSpeed * (Math.random() > 0.5 ? 1 : -1);
-                    ball.dy = -ball.baseSpeed;
+                    if (ball.dx === 0 && ball.dy === 0) {
+                        ball.dx = ball.baseSpeed * (Math.random() > 0.5 ? 1 : -1);
+                        ball.dy = -ball.baseSpeed;
+                    }
                     lastTime = performance.now();
                     draw();
                 }
@@ -265,13 +267,15 @@
         });
 
         startButton.addEventListener('click', () => {
-            if (gameState !== 'gameOver' && gameState !== 'won') {
+            if (gameState !== 'gameOver') {
                 gameState = gameState === 'playing' ? 'paused' : 'playing';
                 startButton.textContent = gameState === 'playing' ? 'Pause' : 'Start';
                 startButton.setAttribute('aria-label', gameState === 'playing' ? 'Pause game' : 'Start game');
                 if (gameState === 'playing') {
-                    ball.dx = ball.baseSpeed * (Math.random() > 0.5 ? 1 : -1);
-                    ball.dy = -ball.baseSpeed;
+                    if (ball.dx === 0 && ball.dy === 0) {
+                        ball.dx = ball.baseSpeed * (Math.random() > 0.5 ? 1 : -1);
+                        ball.dy = -ball.baseSpeed;
+                    }
                     lastTime = performance.now();
                     draw();
                 }
@@ -380,8 +384,13 @@
                 for (let r = 0; r < bricks[c].length; r++) {
                     const b = bricks[c][r];
                     if (b.status === 1) {
-                        if (ball.x > b.x && ball.x < b.x + brick.width &&
-                            ball.y > b.y && ball.y < b.y + brick.height) {
+                        const closestX = Math.max(b.x, Math.min(ball.x, b.x + brick.width));
+                        const closestY = Math.max(b.y, Math.min(ball.y, b.y + brick.height));
+                        const distanceX = ball.x - closestX;
+                        const distanceY = ball.y - closestY;
+                        const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
+                        if (distance < ball.radius) {
+                            // Determine collision side
                             const dx = ball.x - (b.x + brick.width / 2);
                             const dy = ball.y - (b.y + brick.height / 2);
                             if (Math.abs(dx) > Math.abs(dy)) {
@@ -493,7 +502,7 @@
         // Game loop
         function draw() {
             const currentTime = performance.now();
-            const deltaTime = (currentTime - lastTime) / 1000;
+            const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.016); // Cap at ~60fps
             lastTime = currentTime;
 
             ctx.clearRect(0, 0, 800, 600);
@@ -519,38 +528,50 @@
             paddle.x = Math.max(0, Math.min(paddle.x, 800 - paddle.width));
 
             // Ball movement
+            const prevX = ball.x;
+            const prevY = ball.y;
             ball.x += ball.dx * deltaTime;
             ball.y += ball.dy * deltaTime;
 
             // Wall collisions
-            if (ball.x + ball.radius > 800 || ball.x - ball.radius < 0) {
+            if (ball.x + ball.radius > 800) {
+                ball.x = 800 - ball.radius;
+                ball.dx = -ball.dx;
+            } else if (ball.x - ball.radius < 0) {
+                ball.x = ball.radius;
                 ball.dx = -ball.dx;
             }
             if (ball.y - ball.radius < 0) {
+                ball.y = ball.radius;
                 ball.dy = -ball.dy;
             }
+
+            // Paddle collision
+            if (ball.y + ball.radius > paddle.y && ball.y - ball.radius < paddle.y + paddle.height &&
+                ball.x > paddle.x && ball.x < paddle.x + paddle.width && ball.dy > 0) {
+                sounds.paddle.play().catch(() => {});
+                ball.y = paddle.y - ball.radius; // Prevent ball from passing through
+                const hitPoint = (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2);
+                const angle = hitPoint * Math.PI / 4;
+                ball.dx = ball.speed * Math.sin(angle);
+                ball.dy = -ball.speed * Math.cos(angle);
+            }
+
+            // Bottom boundary
             if (ball.y + ball.radius > 600) {
-                if (ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
-                    sounds.paddle.play().catch(() => {});
-                    const hitPoint = (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2);
-                    const angle = hitPoint * Math.PI / 4;
-                    ball.dx = ball.speed * Math.sin(angle);
-                    ball.dy = -ball.speed * Math.cos(angle);
+                lives--;
+                sounds.loseLife.play().catch(() => {});
+                if (lives <= 0) {
+                    gameState = 'gameOver';
+                    startButton.textContent = 'Start';
+                    startButton.setAttribute('aria-label', 'Start game');
                 } else {
-                    lives--;
-                    sounds.loseLife.play().catch(() => {});
-                    if (lives <= 0) {
-                        gameState = 'gameOver';
-                        startButton.textContent = 'Start';
-                        startButton.setAttribute('aria-label', 'Start game');
-                    } else {
-                        resetBall();
-                    }
+                    resetBall();
                 }
             }
 
             // Prevent ball from getting stuck
-            if (Math.abs(ball.dx) < 10 && ball.dx !== 0) {
+            if (Math.abs(ball.dx) < 50 && ball.dx !== 0) {
                 ball.dx *= 1.1;
             }
 
